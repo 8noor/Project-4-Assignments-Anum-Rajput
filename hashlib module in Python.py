@@ -1,92 +1,80 @@
-import streamlit as st
-import hashlib
-from cryptography.fernet import Fernet
-
-# Generate a key (should be stored securely in production)
-KEY = Fernet.generate_key()
-cipher = Fernet(KEY)
-
-# Initialize session state variables
-if 'failed_attempts' not in st.session_state:
-    st.session_state.failed_attempts = 0
-
-# In-memory data storage
-stored_data = {}  # {"user1_data": {"encrypted_text": "xyz", "passkey": "hashed"}}
-
-# Function to hash passkey
-def hash_passkey(passkey):
-    return hashlib.sha256(passkey.encode()).hexdigest()
-
-# Function to encrypt data
-def encrypt_data(text, passkey):
-    return cipher.encrypt(text.encode()).decode()
-
-# Function to decrypt data
-def decrypt_data(encrypted_text, passkey):
-    hashed_passkey = hash_passkey(passkey)
-
-    for key, value in stored_data.items():
-        if value["encrypted_text"] == encrypted_text and value["passkey"] == hashed_passkey:
-            st.session_state.failed_attempts = 0
-            return cipher.decrypt(encrypted_text.encode()).decode()
+from graphics import Canvas
+import time
     
-    st.session_state.failed_attempts += 1
-    return None
+CANVAS_WIDTH : int = 400
+CANVAS_HEIGHT : int = 400
 
-# Streamlit UI
-st.title("🔒 Secure Data Encryption System")
+CELL_SIZE : int = 40
+ERASER_SIZE : int = 20
 
-# Navigation
-menu = ["Home", "Store Data", "Retrieve Data", "Login"]
-choice = st.sidebar.selectbox("Navigation", menu)
+def erase_objects(canvas, eraser):
+    """Erase objects in contact with the eraser"""
+    # Get mouse info to help us know which cells to delete
+    mouse_x = canvas.get_mouse_x()
+    mouse_y = canvas.get_mouse_y()
+    
+    # Calculate where our eraser is
+    left_x = mouse_x
+    top_y = mouse_y
+    right_x = left_x + ERASER_SIZE
+    bottom_y = top_y + ERASER_SIZE
+    
+    # Find things that overlap with our eraser
+    overlapping_objects = canvas.find_overlapping(left_x, top_y, right_x, bottom_y)
+    
+    # For everything that overlaps with our eraser (that isn't our eraser), change
+    # its color to white
+    for overlapping_object in overlapping_objects:
+        if overlapping_object != eraser:
+            canvas.set_color(overlapping_object, 'white')
 
-if choice == "Home":
-    st.subheader("🏠 Welcome to the Secure Data System")
-    st.write("Use this app to **securely store and retrieve data** using unique passkeys.")
+# There is no need to edit code beyond this point
 
-elif choice == "Store Data":
-    st.subheader("📂 Store Data Securely")
-    user_data = st.text_area("Enter Data:")
-    passkey = st.text_input("Enter Passkey:", type="password")
+def main():
+    canvas = Canvas(CANVAS_WIDTH, CANVAS_HEIGHT)
+    
+    num_rows = CANVAS_HEIGHT // CELL_SIZE  # Figure out how many rows of cells we need
+    num_cols = CANVAS_WIDTH // CELL_SIZE   # Figure out how many columns of cells we need
+    
+    # Make a grid of squares based on the number of rows and columns.
+    # The rows and columns along with our cell size help determine where
+    # each individual cell belongs in our grid!
+    for row in range(num_rows):
+        for col in range(num_cols):
+            left_x = col * CELL_SIZE
+            top_y = row * CELL_SIZE
+            right_x = left_x + CELL_SIZE   # The right coordinate of the cell is CELL_SIZE pixels away from the left
+            bottom_y = top_y + CELL_SIZE   # The bottom coordinate of the cell is CELL_SIZE pixels away from the top
+            
+            # Create a single cell in the grid
+            cell = canvas.create_rectangle(left_x, top_y, right_x, bottom_y, 'blue')
+            
+            
+    canvas.wait_for_click()  # Wait for the user to click before creating the eraser
+    
+    last_click_x, last_click_y = canvas.get_last_click()  # Get the starting location for the eraser
+    
+    # Create our eraser
+    eraser = canvas.create_rectangle(
+        last_click_x, 
+        last_click_y, 
+        last_click_x + ERASER_SIZE, 
+        last_click_y + ERASER_SIZE, 
+        'pink'
+    )
+    
+    # Move the eraser, and erase what it's touching
+    while True:
+        # Get where our mouse is and move the eraser to there
+        mouse_x = canvas.get_mouse_x()
+        mouse_y = canvas.get_mouse_y()
+        canvas.moveto(eraser, mouse_x, mouse_y)
+        
+        # Erase anything touching the eraser
+        erase_objects(canvas, eraser) 
+        
+        time.sleep(0.05)
 
-    if st.button("Encrypt & Save"):
-        if user_data and passkey:
-            hashed_passkey = hash_passkey(passkey)
-            encrypted_text = encrypt_data(user_data, passkey)
-            stored_data[encrypted_text] = {"encrypted_text": encrypted_text, "passkey": hashed_passkey}
-            st.success("✅ Data stored securely!")
-        else:
-            st.error("⚠️ Both fields are required!")
 
-elif choice == "Retrieve Data":
-    st.subheader("🔍 Retrieve Your Data")
-    encrypted_text = st.text_area("Enter Encrypted Data:")
-    passkey = st.text_input("Enter Passkey:", type="password")
-
-    if st.button("Decrypt"):
-        if encrypted_text and passkey:
-            decrypted_text = decrypt_data(encrypted_text, passkey)
-
-            if decrypted_text:
-                st.success(f"✅ Decrypted Data: {decrypted_text}")
-            else:
-                attempts_left = 3 - st.session_state.failed_attempts
-                st.error(f"❌ Incorrect passkey! Attempts remaining: {attempts_left}")
-
-                if st.session_state.failed_attempts >= 3:
-                    st.warning("🔒 Too many failed attempts! Redirecting to Login Page.")
-                    st.experimental_rerun()
-        else:
-            st.error("⚠️ Both fields are required!")
-
-elif choice == "Login":
-    st.subheader("🔑 Reauthorization Required")
-    login_pass = st.text_input("Enter Master Password:", type="password")
-
-    if st.button("Login"):
-        if login_pass == "admin123":  # Hardcoded for demo, replace with proper auth
-            st.session_state.failed_attempts = 0
-            st.success("✅ Reauthorized successfully! Redirecting to Retrieve Data...")
-            st.experimental_rerun()
-        else:
-            st.error("❌ Incorrect password!")
+if __name__ == '__main__':
+    main()
